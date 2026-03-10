@@ -8,7 +8,7 @@ public class Endpoint : IEndpoint<NotesGroup>
     public static void Map(IEndpointRouteBuilder app) =>
         app.MapGet("/{id}", Handle)
            .WithName("GetNoteById");
-	private static async Task<Results<Ok<Response>, NotFound>> Handle(
+    private static async Task<Results<Ok<Response>, NotFound>> Handle(
         [AsParameters] Request req,
         CancellationToken ct)
     {

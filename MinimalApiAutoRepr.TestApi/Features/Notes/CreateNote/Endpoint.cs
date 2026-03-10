@@ -8,7 +8,7 @@ public class Endpoint : IEndpoint<NotesGroup>
     public static void Map(IEndpointRouteBuilder app) =>
         app.MapPost("/", Handle);
 
-	private static async Task<Results<CreatedAtRoute<Response>, ValidationProblem>> Handle(
+    private static async Task<Results<CreatedAtRoute<Response>, ValidationProblem>> Handle(
         Request req,
         CancellationToken ct)
     {

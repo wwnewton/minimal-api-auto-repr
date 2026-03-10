@@ -3,8 +3,8 @@
 
 public class TopLevelGroup : IGroupEndpoint
 {
-	public static IEndpointRouteBuilder Map(IEndpointRouteBuilder app)
-	{
-		return app;
-	}
+    public static IEndpointRouteBuilder Map(IEndpointRouteBuilder app)
+    {
+        return app;
+    }
 }

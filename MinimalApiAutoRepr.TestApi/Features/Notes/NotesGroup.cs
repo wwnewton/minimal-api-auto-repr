@@ -2,7 +2,7 @@
 
 public class NotesGroup : IGroupEndpoint
 {
-	public static IEndpointRouteBuilder Map(IEndpointRouteBuilder app) => 
-		app.MapGroup("/api/notes")
-		   .WithTags("Notes Endpoints");
+    public static IEndpointRouteBuilder Map(IEndpointRouteBuilder app) =>
+        app.MapGroup("/api/notes")
+           .WithTags("Notes Endpoints");
 }

@@ -11,35 +11,33 @@ namespace MinimalApiAutoRepr.Generators;
 [Generator]
 public class EndpointMapperGenerator : IIncrementalGenerator
 {
-	public void Initialize(IncrementalGeneratorInitializationContext context)
-	{
-		var provider = context.SyntaxProvider
-			.CreateSyntaxProvider(
-				predicate: static (node, _) => node is ClassDeclarationSyntax,
-				transform: static (ctx, _) => ctx.SemanticModel.GetDeclaredSymbol((ClassDeclarationSyntax)ctx.Node) as INamedTypeSymbol)
-			.Where(static s => s != null)!
-			.Select(static (s, _) => s!);
+    public void Initialize(IncrementalGeneratorInitializationContext context)
+    {
+        var provider = context.SyntaxProvider
+            .CreateSyntaxProvider(
+                predicate: static (node, _) => node is ClassDeclarationSyntax,
+                transform: static (ctx, _) => ctx.SemanticModel.GetDeclaredSymbol((ClassDeclarationSyntax)ctx.Node) as INamedTypeSymbol)
+            .Where(static s => s != null)!
+            .Select(static (s, _) => s!);
 
-		var compilationAndTypes = context.CompilationProvider.Combine(provider.Collect());
+        var compilationAndTypes = context.CompilationProvider.Combine(provider.Collect());
 
-		context.RegisterSourceOutput(compilationAndTypes, (spc, source) => Generate(spc, source.Left, source.Right));
-	}
+        context.RegisterSourceOutput(compilationAndTypes, (spc, source) => Generate(spc, source.Left, source.Right));
+    }
 
-    
+    private static void Generate(SourceProductionContext spc, Compilation compilation, object typesObj)
+    {
+        var groups = new List<GroupInfo>();
+        var endpoints = new List<EndpointInfo>();
 
-	static void Generate(SourceProductionContext spc, Compilation compilation, object typesObj)
-	{
-		var groups = new List<GroupInfo>();
-		var endpoints = new List<EndpointInfo>();
-
-		if (typesObj is IEnumerable<INamedTypeSymbol> types)
-		{
-			ParseTypes(types, groups, endpoints);
-		}
-		else
-		{
-			// fallback: nothing to parse
-		}
+        if (typesObj is IEnumerable<INamedTypeSymbol> types)
+        {
+            ParseTypes(types, groups, endpoints);
+        }
+        else
+        {
+            // fallback: nothing to parse
+        }
 
         var sb = new StringBuilder();
 
@@ -56,28 +54,28 @@ public class EndpointMapperGenerator : IIncrementalGenerator
         sb.AppendLine("    public static IEndpointRouteBuilder MapAutoReprEndpoints(this IEndpointRouteBuilder app)");
         sb.AppendLine("    {");
 
-		var groupBySymbol = groups.ToDictionary(g => (ISymbol)g.Symbol, SymbolEqualityComparer.Default);
+        var groupBySymbol = groups.ToDictionary(g => (ISymbol)g.Symbol, SymbolEqualityComparer.Default);
         var children = BuildChildrenMap(groups);
 
-		// Resolve builder symbols (kept for potential future checks)
-		_ = compilation.GetTypeByMetadataName("Microsoft.AspNetCore.Builder.IEndpointRouteBuilder")
-			?? compilation.GetTypeByMetadataName("Microsoft.AspNetCore.Routing.IEndpointRouteBuilder");
+        // Resolve builder symbols (kept for potential future checks)
+        _ = compilation.GetTypeByMetadataName("Microsoft.AspNetCore.Builder.IEndpointRouteBuilder")
+            ?? compilation.GetTypeByMetadataName("Microsoft.AspNetCore.Routing.IEndpointRouteBuilder");
 
-		_ = compilation.GetTypeByMetadataName("Microsoft.AspNetCore.Builder.RouteGroupBuilder")
-			?? compilation.GetTypeByMetadataName("Microsoft.AspNetCore.Routing.RouteGroupBuilder");
+        _ = compilation.GetTypeByMetadataName("Microsoft.AspNetCore.Builder.RouteGroupBuilder")
+            ?? compilation.GetTypeByMetadataName("Microsoft.AspNetCore.Routing.RouteGroupBuilder");
 
-		var groupVarByType = EmitGroups(sb, groups, children, groupBySymbol);
+        var groupVarByType = EmitGroups(sb, groups, children, groupBySymbol);
 
-		EmitEndpoints(sb, endpoints, groups, groupVarByType);
+        EmitEndpoints(sb, endpoints, groups, groupVarByType);
 
         sb.AppendLine("        return app;");
         sb.AppendLine("    }");
         sb.AppendLine("}");
 
-		spc.AddSource("GeneratedEndpointMappings.g.cs", sb.ToString());
-	}
+        spc.AddSource("GeneratedEndpointMappings.g.cs", sb.ToString());
+    }
 
-    static void ParseTypes(IEnumerable<INamedTypeSymbol> types, List<GroupInfo> groups, List<EndpointInfo> endpoints)
+    private static void ParseTypes(IEnumerable<INamedTypeSymbol> types, List<GroupInfo> groups, List<EndpointInfo> endpoints)
     {
         // Discover groups and endpoints by implemented interfaces from the generated IEndpoint/IGroupEndpoint types.
         foreach (var symbol in types)
@@ -119,149 +117,136 @@ public class EndpointMapperGenerator : IIncrementalGenerator
         }
     }
 
-	static Dictionary<ISymbol, List<ISymbol>> BuildChildrenMap(List<GroupInfo> groups)
-	{
-		var children = new Dictionary<ISymbol, List<ISymbol>>(SymbolEqualityComparer.Default);
-		foreach (var g in groups)
-		{
-			if (g.Parent != null)
-			{
-				if (!children.TryGetValue(g.Parent, out var list))
-				{
-					list = new List<ISymbol>();
-					children[g.Parent] = list;
-				}
-				list.Add(g.Symbol);
-			}
-		}
-		return children;
-	}
+    private static Dictionary<ISymbol, List<ISymbol>> BuildChildrenMap(List<GroupInfo> groups)
+    {
+        var children = new Dictionary<ISymbol, List<ISymbol>>(SymbolEqualityComparer.Default);
+        foreach (var g in groups)
+        {
+            if (g.Parent != null)
+            {
+                if (!children.TryGetValue(g.Parent, out var list))
+                {
+                    list = [];
+                    children[g.Parent] = list;
+                }
+                list.Add(g.Symbol);
+            }
+        }
+        return children;
+    }
 
-    static Dictionary<ISymbol, string> EmitGroups(StringBuilder sb, List<GroupInfo> groups, Dictionary<ISymbol, List<ISymbol>> children, Dictionary<ISymbol, GroupInfo> groupBySymbol)
-	{
-		var groupVarByType = new Dictionary<ISymbol, string>(SymbolEqualityComparer.Default);
-		int gi = 0;
+    private static Dictionary<ISymbol, string> EmitGroups(StringBuilder sb, List<GroupInfo> groups, Dictionary<ISymbol, List<ISymbol>> children, Dictionary<ISymbol, GroupInfo> groupBySymbol)
+    {
+        var groupVarByType = new Dictionary<ISymbol, string>(SymbolEqualityComparer.Default);
+        int gi = 0;
 
-		var emitted = new HashSet<ISymbol>(SymbolEqualityComparer.Default);
-		var parentVarBySymbol = new Dictionary<ISymbol, string>(SymbolEqualityComparer.Default);
-		var q = new Queue<ISymbol>();
+        var emitted = new HashSet<ISymbol>(SymbolEqualityComparer.Default);
+        var parentVarBySymbol = new Dictionary<ISymbol, string>(SymbolEqualityComparer.Default);
+        var q = new Queue<ISymbol>();
 
-		foreach (var g in groups.Where(g => g.Parent == null))
-		{
-			parentVarBySymbol[g.Symbol] = "app";
-			q.Enqueue(g.Symbol);
-		}
+        foreach (var g in groups.Where(g => g.Parent == null))
+        {
+            parentVarBySymbol[g.Symbol] = "app";
+            q.Enqueue(g.Symbol);
+        }
 
-		while (q.Count > 0)
-		{
-			var symbol = q.Dequeue();
-			if (emitted.Contains(symbol))
-			{
-				continue;
-			}
+        while (q.Count > 0)
+        {
+            var symbol = q.Dequeue();
+            if (emitted.Contains(symbol))
+            {
+                continue;
+            }
 
-			if (!groupBySymbol.TryGetValue(symbol, out var ginfo))
-			{
-				continue;
-			}
+            if (!groupBySymbol.TryGetValue(symbol, out var ginfo))
+            {
+                continue;
+            }
 
-			var parentVar = parentVarBySymbol.TryGetValue(symbol, out var pv) ? pv : "app";
+            var parentVar = parentVarBySymbol.TryGetValue(symbol, out var pv) ? pv : "app";
 
-			var baseName = ToCamelCase(symbol.Name ?? ("group" + (++gi)));
-			var varName = baseName;
-			var suffix = 1;
-			while (groupVarByType.Values.Contains(varName))
-			{
-				varName = baseName + (++suffix).ToString();
-			}
+            var baseName = ToCamelCase(symbol.Name ?? ("group" + (++gi)));
+            var varName = baseName;
+            var suffix = 1;
+            while (groupVarByType.Values.Contains(varName))
+            {
+                varName = baseName + (++suffix).ToString();
+            }
 
-			groupVarByType[symbol] = varName;
+            groupVarByType[symbol] = varName;
 
 
             // Invoke the group's static Map method with the parent builder and capture the returned builder
             var containingGroup = ginfo.Symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
             sb.AppendLine($"        var {varName} = {containingGroup}.Map({parentVar});");
 
-                // No further group-level Map invocation required; groups implement their mapping in their Map method
+            // No further group-level Map invocation required; groups implement their mapping in their Map method
 
-			emitted.Add(symbol);
+            emitted.Add(symbol);
 
-			if (children.TryGetValue(symbol, out var childList))
-			{
-				foreach (var childSym in childList)
-				{
-					if (!parentVarBySymbol.ContainsKey(childSym))
-					{
-						parentVarBySymbol[childSym] = varName;
-					}
+            if (children.TryGetValue(symbol, out var childList))
+            {
+                foreach (var childSym in childList)
+                {
+                    if (!parentVarBySymbol.ContainsKey(childSym))
+                    {
+                        parentVarBySymbol[childSym] = varName;
+                    }
 
-					q.Enqueue(childSym);
-				}
-			}
-		}
+                    q.Enqueue(childSym);
+                }
+            }
+        }
 
-		return groupVarByType;
-	}
+        return groupVarByType;
+    }
 
-	static void EmitEndpoints(StringBuilder sb, List<EndpointInfo> endpoints, List<GroupInfo> groups, Dictionary<ISymbol, string> groupVarByType)
-	{
-		foreach (var ep in endpoints)
-		{
-			var target = "app";
-			if (ep.GroupType != null)
-			{
-				var groupSym = groups.Select(x => x.Symbol).FirstOrDefault(s => SymbolEqualityComparer.Default.Equals(s, ep.GroupType));
-				if (groupSym != null && groupVarByType.TryGetValue(groupSym, out var gv))
-				{
-					target = gv;
-				}
-			}
+    private static void EmitEndpoints(StringBuilder sb, List<EndpointInfo> endpoints, List<GroupInfo> groups, Dictionary<ISymbol, string> groupVarByType)
+    {
+        foreach (var ep in endpoints)
+        {
+            var target = "app";
+            if (ep.GroupType != null)
+            {
+                var groupSym = groups.Select(x => x.Symbol).FirstOrDefault(s => SymbolEqualityComparer.Default.Equals(s, ep.GroupType));
+                if (groupSym != null && groupVarByType.TryGetValue(groupSym, out var gv))
+                {
+                    target = gv;
+                }
+            }
 
             var containing = ep.Symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
             // Call the endpoint's static Map method, passing the parent (group route builder or app)
             sb.AppendLine($"        {containing}.Map({target});");
-		}
-	}
+        }
+    }
 
-	static string ToCamelCase(string s)
-	{
-		if (string.IsNullOrEmpty(s))
-		{
-			return s;
-		}
+    private static string ToCamelCase(string s)
+    {
+        if (string.IsNullOrEmpty(s))
+        {
+            return s;
+        }
 
-		if (s.Length == 1)
-		{
-			return char.ToLowerInvariant(s[0]).ToString();
-		}
+        if (s.Length == 1)
+        {
+            return char.ToLowerInvariant(s[0]).ToString();
+        }
 
-		return char.ToLowerInvariant(s[0]) + s.Substring(1);
-	}
+        return char.ToLowerInvariant(s[0]) + s.Substring(1);
+    }
 
-	// Helper types (avoid C# record types to remain compatible with netstandard2.0)
-	class GroupInfo
-	{
-		public INamedTypeSymbol Symbol { get; }
-		public INamedTypeSymbol? Parent { get; }
+    // Helper types (avoid C# record types to remain compatible with netstandard2.0)
+    private class GroupInfo(INamedTypeSymbol symbol, INamedTypeSymbol? parent)
+    {
+        public INamedTypeSymbol Symbol { get; } = symbol;
+        public INamedTypeSymbol? Parent { get; } = parent;
+    }
 
-		public GroupInfo(INamedTypeSymbol symbol, INamedTypeSymbol? parent)
-		{
-			this.Symbol = symbol;
-			this.Parent = parent;
-		}
-	}
-
-	class EndpointInfo
-	{
-		public INamedTypeSymbol Symbol { get; }
-		public IMethodSymbol MapMethod { get; }
-		public INamedTypeSymbol? GroupType { get; }
-
-		public EndpointInfo(INamedTypeSymbol symbol, IMethodSymbol mapMethod, INamedTypeSymbol? groupType)
-		{
-			this.Symbol = symbol;
-			this.MapMethod = mapMethod;
-			this.GroupType = groupType;
-		}
-	}
+    private class EndpointInfo(INamedTypeSymbol symbol, IMethodSymbol mapMethod, INamedTypeSymbol? groupType)
+    {
+        public INamedTypeSymbol Symbol { get; } = symbol;
+        public IMethodSymbol MapMethod { get; } = mapMethod;
+        public INamedTypeSymbol? GroupType { get; } = groupType;
+    }
 }
