@@ -1,5 +1,4 @@
-global using MinimalApiAutoRepr.Attributes;
-using MinimalApiAutoRepr.Generated;
+global using MinimalApiAutoRepr.Generated;
 using MinimalApiAutoRepr.TestApi.Common.OpenApi;
 using Scalar.AspNetCore;
 

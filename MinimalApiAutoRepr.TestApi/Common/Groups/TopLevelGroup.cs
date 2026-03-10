@@ -1,7 +1,7 @@
 ﻿namespace MinimalApiAutoRepr.TestApi.Common.Groups;
 
-[MapGroup("")]
-public class TopLevelGroup
+
+public class TopLevelGroup : IGroupEndpoint
 {
 	public static IEndpointRouteBuilder Map(IEndpointRouteBuilder app)
 	{

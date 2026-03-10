@@ -3,10 +3,12 @@ namespace MinimalApiAutoRepr.TestApi.Features.Notes.GetNoteById;
 using Microsoft.AspNetCore.Http.HttpResults;
 using MinimalApiAutoRepr.TestApi.Features.Notes;
 
-[MapGet("/{id}", "GetNoteById", typeof(NotesGroup))]
-public class Endpoint
+public class Endpoint : IEndpoint<NotesGroup>
 {
-    public static async Task<Results<Ok<Response>, NotFound>> Handle(
+    public static void Map(IEndpointRouteBuilder app) =>
+        app.MapGet("/{id}", Handle)
+           .WithName("GetNoteById");
+	private static async Task<Results<Ok<Response>, NotFound>> Handle(
         [AsParameters] Request req,
         CancellationToken ct)
     {

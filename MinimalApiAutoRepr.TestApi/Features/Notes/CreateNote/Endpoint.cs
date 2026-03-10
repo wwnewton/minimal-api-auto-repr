@@ -3,11 +3,12 @@ namespace MinimalApiAutoRepr.TestApi.Features.Notes.CreateNote;
 using Microsoft.AspNetCore.Http.HttpResults;
 using MinimalApiAutoRepr.TestApi.Features.Notes.GetNoteById;
 
-[MapPost("/", group: typeof(NotesGroup))]
-public class Endpoint
+public class Endpoint : IEndpoint<NotesGroup>
 {
+    public static void Map(IEndpointRouteBuilder app) =>
+        app.MapPost("/", Handle);
 
-    public static async Task<Results<CreatedAtRoute<Response>, ValidationProblem>> Handle(
+	private static async Task<Results<CreatedAtRoute<Response>, ValidationProblem>> Handle(
         Request req,
         CancellationToken ct)
     {

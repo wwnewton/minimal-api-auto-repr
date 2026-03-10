@@ -1,6 +1,8 @@
 ﻿namespace MinimalApiAutoRepr.TestApi.Features.Notes;
 
-[MapGroup("api/notes")]
-public class NotesGroup
+public class NotesGroup : IGroupEndpoint
 {
+	public static IEndpointRouteBuilder Map(IEndpointRouteBuilder app) => 
+		app.MapGroup("/api/notes")
+		   .WithTags("Notes Endpoints");
 }
