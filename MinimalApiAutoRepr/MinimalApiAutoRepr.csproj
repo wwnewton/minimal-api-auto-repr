@@ -1,0 +1,37 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<TargetFramework>netstandard2.0</TargetFramework>
+		<LangVersion>Latest</LangVersion>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>true</ImplicitUsings>
+		<IsRoslynComponent>true</IsRoslynComponent>
+		<IncludeBuildOutput>true</IncludeBuildOutput>
+		<EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+
+		<!-- Package metadata -->
+		<PackageId>MinimalApiAutoRepr</PackageId>
+		<Version>0.1.5</Version>
+		<Authors>MinimalApiAutoRepr</Authors>
+		<Company>MinimalApiAutoRepr</Company>
+		<Description>Source generator and helpers for mapping minimal API endpoints and route groups with automatic grouping and OpenAPI metadata.</Description>
+		<PackageTags>minimal-api;generator;routegroup;openapi</PackageTags>
+		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+		<RepositoryUrl>https://github.com/your/repo</RepositoryUrl>
+		<IncludeSymbols>false</IncludeSymbols>
+		<!--<PackageType>Analyzer</PackageType>-->
+		<RepositoryType>git</RepositoryType>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="3.11.0">
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+		</PackageReference>
+		<PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.0.0" />
+	</ItemGroup>
+
+	<!-- Ensure the compiled analyzer assembly is included in the package analyzers folder -->
+	<ItemGroup>
+		<None Include="$(TargetPath)" Pack="true" PackagePath="analyzers/dotnet/cs/" visible="false" />
+	</ItemGroup>
+</Project>

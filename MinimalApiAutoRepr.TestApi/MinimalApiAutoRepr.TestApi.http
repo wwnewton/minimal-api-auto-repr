@@ -1,0 +1,6 @@
+@MinimalApiAutoRepr.TestApi_HostAddress = http://localhost:5257
+
+GET {{MinimalApiAutoRepr.TestApi_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
