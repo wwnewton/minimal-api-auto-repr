@@ -25,6 +25,58 @@ public class EndpointMapperGenerator : IIncrementalGenerator
         context.RegisterSourceOutput(compilationAndTypes, (spc, source) => Generate(spc, source.Left, source.Right));
     }
 
+    private static void ReportGroupCycles(SourceProductionContext spc, List<GroupInfo> groups, Dictionary<ISymbol, List<ISymbol>> children, Dictionary<ISymbol, GroupInfo> groupBySymbol)
+    {
+        var indegree = new Dictionary<ISymbol, int>(SymbolEqualityComparer.Default);
+        foreach (var g in groups)
+		{
+			indegree[g.Symbol] = 0;
+		}
+
+		foreach (var g in groups)
+        {
+            if (g.Parent != null && indegree.ContainsKey(g.Symbol) && groupBySymbol.ContainsKey(g.Parent))
+            {
+                indegree[g.Symbol]++;
+            }
+        }
+
+        var q = new Queue<ISymbol>(indegree.Where(kv => kv.Value == 0).Select(kv => kv.Key));
+        int processed = 0;
+        while (q.Count > 0)
+        {
+            var s = q.Dequeue();
+            processed++;
+            if (children.TryGetValue(s, out var ch))
+            {
+                foreach (var c in ch)
+                {
+                    indegree[c]--;
+                    if (indegree[c] == 0)
+					{
+						q.Enqueue(c);
+					}
+				}
+            }
+        }
+
+        if (processed != groups.Count)
+        {
+            var cycleNodes = indegree.Where(kv => kv.Value > 0).Select(kv => kv.Key).ToList();
+            var desc = new DiagnosticDescriptor(
+                "MAAR001",
+                "IGroupEndpoint parent cycle",
+                "IGroupEndpoint parent cycle detected: '{0}' is in a cycle of parent references",
+                "Generator",
+                DiagnosticSeverity.Warning,
+                true);
+            foreach (var sym in cycleNodes)
+            {
+                spc.ReportDiagnostic(Diagnostic.Create(desc, Location.None, sym.ToDisplayString()));
+            }
+        }
+    }
+
     private static void Generate(SourceProductionContext spc, Compilation compilation, object typesObj)
     {
         var groups = new List<GroupInfo>();
@@ -57,6 +109,9 @@ public class EndpointMapperGenerator : IIncrementalGenerator
         var groupBySymbol = groups.ToDictionary(g => (ISymbol)g.Symbol, SymbolEqualityComparer.Default);
         var children = BuildChildrenMap(groups);
 
+        // Detect cycles among IGroupEndpoint parent relationships and report diagnostics
+        ReportGroupCycles(spc, groups, children, groupBySymbol);
+
         // Resolve builder symbols (kept for potential future checks)
         _ = compilation.GetTypeByMetadataName("Microsoft.AspNetCore.Builder.IEndpointRouteBuilder")
             ?? compilation.GetTypeByMetadataName("Microsoft.AspNetCore.Routing.IEndpointRouteBuilder");
@@ -80,10 +135,13 @@ public class EndpointMapperGenerator : IIncrementalGenerator
         // Discover groups and endpoints by implemented interfaces from the generated IEndpoint/IGroupEndpoint types.
         foreach (var symbol in types)
         {
-            if (symbol.TypeKind == TypeKind.Interface) continue;
+            if (symbol.TypeKind == TypeKind.Interface)
+			{
+				continue;
+			}
 
-            // Detect group implementations (IGroupEndpoint or IGroupEndpoint<TParent>)
-            var groupInterface = symbol.AllInterfaces.FirstOrDefault(i => i.Name == "IGroupEndpoint" && i.ContainingNamespace.ToDisplayString() == "MinimalApiAutoRepr.Generated");
+			// Detect group implementations (IGroupEndpoint or IGroupEndpoint<TParent>)
+			var groupInterface = symbol.AllInterfaces.FirstOrDefault(i => i.Name == "IGroupEndpoint" && i.ContainingNamespace.ToDisplayString() == "MinimalApiAutoRepr.Generated");
             if (groupInterface != null)
             {
                 INamedTypeSymbol? parent = null;
