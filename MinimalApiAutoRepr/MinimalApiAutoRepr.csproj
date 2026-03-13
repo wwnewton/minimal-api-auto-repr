@@ -10,7 +10,7 @@
 
 		<!-- Package metadata -->
 		<PackageId>MinimalApiAutoRepr</PackageId>
-		<Version>0.1.6</Version>
+		<Version>0.1.8</Version>
 		<Authors>MinimalApiAutoRepr</Authors>
 		<Company>MinimalApiAutoRepr</Company>
 		<Description>Source generator and helpers for mapping minimal API endpoints and route groups with automatic grouping and OpenAPI metadata.</Description>
