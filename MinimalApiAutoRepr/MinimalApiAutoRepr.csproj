@@ -10,7 +10,7 @@
 
 		<!-- Package metadata -->
 		<PackageId>MinimalApiAutoRepr</PackageId>
-		<Version>0.1.8</Version>
+		<Version>0.1.9</Version>
 		<Authors>wwnewton</Authors>
 		<Company>wwnewton</Company>
 		<Description>Source generator and helpers for mapping minimal API endpoints and route groups with automatic grouping and OpenAPI metadata.</Description>
@@ -27,8 +27,7 @@
 		<!-- Optional but recommended -->
 		<PublishRepositoryUrl>true</PublishRepositoryUrl>
 		<EmbedUntrackedSources>true</EmbedUntrackedSources>
-		<IncludeSymbols>true</IncludeSymbols>
-		<SymbolPackageFormat>snupkg</SymbolPackageFormat>
+		<IncludeSymbols>false</IncludeSymbols>
 	</PropertyGroup>
 
 	<ItemGroup>
