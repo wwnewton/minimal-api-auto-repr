@@ -1,4 +1,5 @@
 <Solution>
   <Project Path="MinimalApiAutoRepr.TestApi/MinimalApiAutoRepr.TestApi.csproj" Id="2bb5b5dd-eb03-4651-a2b5-294a4d9ced50" />
+  <Project Path="MinimalApiAutoRepr.Tests/MinimalApiAutoRepr.Tests.csproj" Id="f25b8189-4b76-4e36-9e11-61a7ebad37e6" />
   <Project Path="MinimalApiAutoRepr/MinimalApiAutoRepr.csproj" Id="cf7bf8f4-3dc4-40d5-bafb-e1f55c20b2be" />
 </Solution>
