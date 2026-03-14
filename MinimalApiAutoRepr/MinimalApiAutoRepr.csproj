@@ -11,14 +11,24 @@
 		<!-- Package metadata -->
 		<PackageId>MinimalApiAutoRepr</PackageId>
 		<Version>0.1.8</Version>
-		<Authors>MinimalApiAutoRepr</Authors>
-		<Company>MinimalApiAutoRepr</Company>
+		<Authors>wwnewton</Authors>
+		<Company>wwnewton</Company>
 		<Description>Source generator and helpers for mapping minimal API endpoints and route groups with automatic grouping and OpenAPI metadata.</Description>
-		<PackageTags>minimal-api;generator;routegroup;openapi</PackageTags>
+		<PackageTags>minimal-api;generator;routegroup;openapi;aspnetcore;source-generator</PackageTags>
 		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
-		<RepositoryUrl>https://github.com/your/repo</RepositoryUrl>
-		<IncludeSymbols>false</IncludeSymbols>
+
+		<!-- Repository and Project Links -->
+		<RepositoryUrl>https://github.com/wwnewton/minimal-api-auto-repr</RepositoryUrl>
 		<RepositoryType>git</RepositoryType>
+		<PackageProjectUrl>https://github.com/wwnewton/minimal-api-auto-repr</PackageProjectUrl>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
+		<PackageLicenseExpression>MIT</PackageLicenseExpression>
+
+		<!-- Optional but recommended -->
+		<PublishRepositoryUrl>true</PublishRepositoryUrl>
+		<EmbedUntrackedSources>true</EmbedUntrackedSources>
+		<IncludeSymbols>true</IncludeSymbols>
+		<SymbolPackageFormat>snupkg</SymbolPackageFormat>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -27,6 +37,12 @@
 			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 		</PackageReference>
 		<PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.0.0" />
+		<PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All" />
+	</ItemGroup>
+
+	<!-- Include README in package -->
+	<ItemGroup>
+		<None Include="..\README.md" Pack="true" PackagePath="\" />
 	</ItemGroup>
 
 	<!-- Ensure the compiled analyzer assembly is included in the package analyzers folder -->
