@@ -1,5 +1,4 @@
-global using MinimalApiAutoRepr.Attributes;
-using MinimalApiAutoRepr.Generated;
+global using MinimalApiAutoRepr.Generated;
 using MinimalApiAutoRepr.TestApi.Common.OpenApi;
 using Scalar.AspNetCore;
 
@@ -22,8 +21,8 @@ app.UseExceptionHandler();
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
-	app.MapOpenApi();
-	app.MapScalarApiReference();
+    app.MapOpenApi();
+    app.MapScalarApiReference();
 }
 
 app.UseHttpsRedirection();

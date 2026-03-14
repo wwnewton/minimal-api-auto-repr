@@ -2,11 +2,10 @@
 
 using MinimalApiAutoRepr.TestApi.Common.Groups;
 
-[MapGroup("api/todos",  name: "Todos", group: typeof(TopLevelGroup))]
-public class TodoGroup
+public class TodoGroup : IGroupEndpoint<TopLevelGroup>
 {
-	public static IEndpointRouteBuilder Map(IEndpointRouteBuilder app)
-	{
-		return app;
-	}
+    public static IEndpointRouteBuilder Map(IEndpointRouteBuilder app) =>
+        app.MapGroup("/todos")
+           .WithTags("Todo Endpoints");
+
 }

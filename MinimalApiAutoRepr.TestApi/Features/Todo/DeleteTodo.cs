@@ -2,12 +2,14 @@ namespace MinimalApiAutoRepr.TestApi.Features.Todo;
 
 using Microsoft.AspNetCore.Http.HttpResults;
 
-[MapDelete("/{id}", nameof(DeleteTodo), typeof(TodoGroup))]
-public class DeleteTodo
+public class DeleteTodo : IEndpoint<TodoGroup>
 {
+    public static void Map(IEndpointRouteBuilder app) =>
+        app.MapDelete("/{id:int}", Handle)
+           .WithName(nameof(DeleteTodo));
     public record Request(int Id);
 
-    public static async Task<Results<NoContent, NotFound>> Handle(
+    private static async Task<Results<NoContent, NotFound>> Handle(
         [AsParameters] Request req,
         CancellationToken ct)
     {

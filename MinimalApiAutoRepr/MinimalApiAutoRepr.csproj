@@ -5,12 +5,12 @@
 		<Nullable>enable</Nullable>
 		<ImplicitUsings>true</ImplicitUsings>
 		<IsRoslynComponent>true</IsRoslynComponent>
-		<IncludeBuildOutput>true</IncludeBuildOutput>
+		<IncludeBuildOutput>false</IncludeBuildOutput>
 		<EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
 
 		<!-- Package metadata -->
 		<PackageId>MinimalApiAutoRepr</PackageId>
-		<Version>0.1.5</Version>
+		<Version>0.1.8</Version>
 		<Authors>MinimalApiAutoRepr</Authors>
 		<Company>MinimalApiAutoRepr</Company>
 		<Description>Source generator and helpers for mapping minimal API endpoints and route groups with automatic grouping and OpenAPI metadata.</Description>
@@ -18,7 +18,6 @@
 		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 		<RepositoryUrl>https://github.com/your/repo</RepositoryUrl>
 		<IncludeSymbols>false</IncludeSymbols>
-		<!--<PackageType>Analyzer</PackageType>-->
 		<RepositoryType>git</RepositoryType>
 	</PropertyGroup>
 
