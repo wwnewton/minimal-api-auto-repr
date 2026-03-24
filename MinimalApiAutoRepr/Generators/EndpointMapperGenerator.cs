@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using System.Text;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace MinimalApiAutoRepr.Generators;
@@ -20,20 +21,24 @@ public class EndpointMapperGenerator : IIncrementalGenerator
             .Where(static s => s != null)!
             .Select(static (s, _) => s!);
 
-        var compilationAndTypes = context.CompilationProvider.Combine(provider.Collect());
+        var uniqueTypes = provider
+            .Collect()
+            .Select(static (items, _) => items.Distinct(INamedTypeSymbolComparer.Instance).ToImmutableArray());
+
+        var compilationAndTypes = context.CompilationProvider.Combine(uniqueTypes);
 
         context.RegisterSourceOutput(compilationAndTypes, (spc, source) => Generate(spc, source.Left, source.Right));
     }
 
-    private static void ReportGroupCycles(SourceProductionContext spc, List<GroupInfo> groups, Dictionary<ISymbol, List<ISymbol>> children, Dictionary<ISymbol, GroupInfo> groupBySymbol)
+    private static HashSet<ISymbol> ReportGroupCycles(SourceProductionContext spc, List<GroupInfo> groups, Dictionary<ISymbol, List<ISymbol>> children, Dictionary<ISymbol, GroupInfo> groupBySymbol)
     {
         var indegree = new Dictionary<ISymbol, int>(SymbolEqualityComparer.Default);
         foreach (var g in groups)
-		{
-			indegree[g.Symbol] = 0;
-		}
+       {
+            indegree[g.Symbol] = 0;
+        }
 
-		foreach (var g in groups)
+        foreach (var g in groups)
         {
             if (g.Parent != null && indegree.ContainsKey(g.Symbol) && groupBySymbol.ContainsKey(g.Parent))
             {
@@ -53,16 +58,21 @@ public class EndpointMapperGenerator : IIncrementalGenerator
                 {
                     indegree[c]--;
                     if (indegree[c] == 0)
-					{
-						q.Enqueue(c);
-					}
-				}
+                   {
+                        q.Enqueue(c);
+                    }
+            }
             }
         }
 
+        var cycleNodes = new HashSet<ISymbol>(SymbolEqualityComparer.Default);
         if (processed != groups.Count)
         {
-            var cycleNodes = indegree.Where(kv => kv.Value > 0).Select(kv => kv.Key).ToList();
+            foreach (var node in indegree.Where(kv => kv.Value > 0).Select(kv => kv.Key))
+            {
+                cycleNodes.Add(node);
+            }
+
             var desc = new DiagnosticDescriptor(
                 "MAAR001",
                 "IGroupEndpoint parent cycle",
@@ -72,24 +82,22 @@ public class EndpointMapperGenerator : IIncrementalGenerator
                 true);
             foreach (var sym in cycleNodes)
             {
-                spc.ReportDiagnostic(Diagnostic.Create(desc, Location.None, sym.ToDisplayString()));
+                spc.ReportDiagnostic(Diagnostic.Create(desc, sym.Locations.FirstOrDefault(), sym.ToDisplayString()));
             }
         }
+
+        return cycleNodes;
     }
 
-    private static void Generate(SourceProductionContext spc, Compilation compilation, object typesObj)
+    private static void Generate(SourceProductionContext spc, Compilation compilation, ImmutableArray<INamedTypeSymbol> types)
     {
         var groups = new List<GroupInfo>();
         var endpoints = new List<EndpointInfo>();
 
-        if (typesObj is IEnumerable<INamedTypeSymbol> types)
-        {
-            ParseTypes(types, groups, endpoints);
-        }
-        else
-        {
-            // fallback: nothing to parse
-        }
+        var endpointRouteBuilderSymbol = compilation.GetTypeByMetadataName("Microsoft.AspNetCore.Builder.IEndpointRouteBuilder")
+            ?? compilation.GetTypeByMetadataName("Microsoft.AspNetCore.Routing.IEndpointRouteBuilder");
+
+        ParseTypes(spc, types, groups, endpoints, endpointRouteBuilderSymbol);
 
         var sb = new StringBuilder();
 
@@ -110,18 +118,22 @@ public class EndpointMapperGenerator : IIncrementalGenerator
         var children = BuildChildrenMap(groups);
 
         // Detect cycles among IGroupEndpoint parent relationships and report diagnostics
-        ReportGroupCycles(spc, groups, children, groupBySymbol);
+        var cycleNodes = ReportGroupCycles(spc, groups, children, groupBySymbol);
+        var groupsWithMissingParent = ReportMissingGroupParents(spc, groups, groupBySymbol);
+
+        var excludedGroups = new HashSet<ISymbol>(SymbolEqualityComparer.Default);
+        excludedGroups.UnionWith(cycleNodes);
+        excludedGroups.UnionWith(groupsWithMissingParent);
 
         // Resolve builder symbols (kept for potential future checks)
-        _ = compilation.GetTypeByMetadataName("Microsoft.AspNetCore.Builder.IEndpointRouteBuilder")
-            ?? compilation.GetTypeByMetadataName("Microsoft.AspNetCore.Routing.IEndpointRouteBuilder");
+        _ = endpointRouteBuilderSymbol;
 
         _ = compilation.GetTypeByMetadataName("Microsoft.AspNetCore.Builder.RouteGroupBuilder")
             ?? compilation.GetTypeByMetadataName("Microsoft.AspNetCore.Routing.RouteGroupBuilder");
 
-        var groupVarByType = EmitGroups(sb, groups, children, groupBySymbol);
+        var groupVarByType = EmitGroups(sb, groups, children, groupBySymbol, excludedGroups);
 
-        EmitEndpoints(sb, endpoints, groups, groupVarByType);
+        EmitEndpoints(spc, sb, endpoints, groups, groupVarByType, excludedGroups);
 
         sb.AppendLine("        return app;");
         sb.AppendLine("    }");
@@ -130,18 +142,45 @@ public class EndpointMapperGenerator : IIncrementalGenerator
         spc.AddSource("GeneratedEndpointMappings.g.cs", sb.ToString());
     }
 
-    private static void ParseTypes(IEnumerable<INamedTypeSymbol> types, List<GroupInfo> groups, List<EndpointInfo> endpoints)
+    private static HashSet<ISymbol> ReportMissingGroupParents(SourceProductionContext spc, List<GroupInfo> groups, Dictionary<ISymbol, GroupInfo> groupBySymbol)
+    {
+        var result = new HashSet<ISymbol>(SymbolEqualityComparer.Default);
+        var desc = new DiagnosticDescriptor(
+            "MAAR003",
+            "IGroupEndpoint parent not found",
+            "IGroupEndpoint parent '{0}' for '{1}' was not discovered. Group mapping was skipped.",
+            "Generator",
+            DiagnosticSeverity.Warning,
+            true);
+
+        foreach (var group in groups)
+        {
+            if (group.Parent != null && !groupBySymbol.ContainsKey(group.Parent))
+            {
+                result.Add(group.Symbol);
+                spc.ReportDiagnostic(Diagnostic.Create(
+                    desc,
+                    group.Symbol.Locations.FirstOrDefault(),
+                    group.Parent.ToDisplayString(),
+                    group.Symbol.ToDisplayString()));
+            }
+        }
+
+        return result;
+    }
+
+    private static void ParseTypes(SourceProductionContext spc, IEnumerable<INamedTypeSymbol> types, List<GroupInfo> groups, List<EndpointInfo> endpoints, INamedTypeSymbol? endpointRouteBuilderSymbol)
     {
         // Discover groups and endpoints by implemented interfaces from the generated IEndpoint/IGroupEndpoint types.
         foreach (var symbol in types)
         {
             if (symbol.TypeKind == TypeKind.Interface)
-			{
-				continue;
-			}
+           {
+                continue;
+            }
 
-			// Detect group implementations (IGroupEndpoint or IGroupEndpoint<TParent>)
-			var groupInterface = symbol.AllInterfaces.FirstOrDefault(i => i.Name == "IGroupEndpoint" && i.ContainingNamespace.ToDisplayString() == "MinimalApiAutoRepr.Generated");
+            // Detect group implementations (IGroupEndpoint or IGroupEndpoint<TParent>)
+            var groupInterface = symbol.AllInterfaces.FirstOrDefault(i => i.Name == "IGroupEndpoint" && i.ContainingNamespace.ToDisplayString() == "MinimalApiAutoRepr.Generated");
             if (groupInterface != null)
             {
                 INamedTypeSymbol? parent = null;
@@ -151,7 +190,14 @@ public class EndpointMapperGenerator : IIncrementalGenerator
                     parent = arg;
                 }
 
-                groups.Add(new GroupInfo(symbol, parent));
+                if (TryGetValidMapMethod(symbol, endpointRouteBuilderSymbol, requireNonVoidReturn: true, out _))
+                {
+                    groups.Add(new GroupInfo(symbol, parent));
+                }
+                else
+                {
+                    ReportInvalidMapMethod(spc, symbol, "IGroupEndpoint");
+                }
             }
 
             // Detect endpoints (IEndpoint or IEndpoint<TGroup>)
@@ -166,13 +212,70 @@ public class EndpointMapperGenerator : IIncrementalGenerator
                 }
 
                 // Find static Map method; if not present skip the endpoint
-                var mapMethod = symbol.GetMembers().OfType<IMethodSymbol>().FirstOrDefault(m => m.Name == "Map" && m.IsStatic);
-                if (mapMethod != null)
+                if (TryGetValidMapMethod(symbol, endpointRouteBuilderSymbol, requireNonVoidReturn: false, out var mapMethod))
                 {
-                    endpoints.Add(new EndpointInfo(symbol, mapMethod, groupType));
+                    endpoints.Add(new EndpointInfo(symbol, mapMethod!, groupType));
+                }
+                else
+                {
+                    ReportInvalidMapMethod(spc, symbol, "IEndpoint");
                 }
             }
         }
+    }
+
+    private static bool TryGetValidMapMethod(INamedTypeSymbol symbol, INamedTypeSymbol? endpointRouteBuilderSymbol, bool requireNonVoidReturn, out IMethodSymbol? mapMethod)
+    {
+        mapMethod = symbol
+            .GetMembers()
+            .OfType<IMethodSymbol>()
+            .FirstOrDefault(m =>
+                m.Name == "Map"
+                && m.IsStatic
+                && m.Parameters.Length == 1
+                && !m.Parameters[0].IsParams
+                && !m.Parameters[0].IsOptional
+                && (!requireNonVoidReturn || m.ReturnsVoid == false));
+
+        if (mapMethod == null)
+        {
+            return false;
+        }
+
+        if (endpointRouteBuilderSymbol == null)
+        {
+            return true;
+        }
+
+        var parameterType = mapMethod.Parameters[0].Type;
+        if (SymbolEqualityComparer.Default.Equals(parameterType, endpointRouteBuilderSymbol))
+        {
+            return true;
+        }
+
+        if (parameterType is INamedTypeSymbol namedParameterType)
+        {
+            return namedParameterType.AllInterfaces.Any(i => SymbolEqualityComparer.Default.Equals(i, endpointRouteBuilderSymbol));
+        }
+
+        return false;
+    }
+
+    private static void ReportInvalidMapMethod(SourceProductionContext spc, INamedTypeSymbol symbol, string interfaceName)
+    {
+        var desc = new DiagnosticDescriptor(
+            "MAAR002",
+            "Invalid static Map method",
+            "Type '{0}' implements '{1}' but does not expose a valid static Map method accepting a single IEndpointRouteBuilder-compatible parameter and returning a value.",
+            "Generator",
+            DiagnosticSeverity.Warning,
+            true);
+
+        spc.ReportDiagnostic(Diagnostic.Create(
+            desc,
+            symbol.Locations.FirstOrDefault(),
+            symbol.ToDisplayString(),
+            interfaceName));
     }
 
     private static Dictionary<ISymbol, List<ISymbol>> BuildChildrenMap(List<GroupInfo> groups)
@@ -193,10 +296,14 @@ public class EndpointMapperGenerator : IIncrementalGenerator
         return children;
     }
 
-    private static Dictionary<ISymbol, string> EmitGroups(StringBuilder sb, List<GroupInfo> groups, Dictionary<ISymbol, List<ISymbol>> children, Dictionary<ISymbol, GroupInfo> groupBySymbol)
+    private static Dictionary<ISymbol, string> EmitGroups(StringBuilder sb, List<GroupInfo> groups, Dictionary<ISymbol, List<ISymbol>> children, Dictionary<ISymbol, GroupInfo> groupBySymbol, HashSet<ISymbol> excludedGroups)
     {
         var groupVarByType = new Dictionary<ISymbol, string>(SymbolEqualityComparer.Default);
         int gi = 0;
+        var reservedVariableNames = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "app"
+        };
 
         var emitted = new HashSet<ISymbol>(SymbolEqualityComparer.Default);
         var parentVarBySymbol = new Dictionary<ISymbol, string>(SymbolEqualityComparer.Default);
@@ -204,6 +311,11 @@ public class EndpointMapperGenerator : IIncrementalGenerator
 
         foreach (var g in groups.Where(g => g.Parent == null))
         {
+            if (excludedGroups.Contains(g.Symbol))
+            {
+                continue;
+            }
+
             parentVarBySymbol[g.Symbol] = "app";
             q.Enqueue(g.Symbol);
         }
@@ -221,17 +333,28 @@ public class EndpointMapperGenerator : IIncrementalGenerator
                 continue;
             }
 
+            if (excludedGroups.Contains(symbol))
+            {
+                continue;
+            }
+
             var parentVar = parentVarBySymbol.TryGetValue(symbol, out var pv) ? pv : "app";
 
             var baseName = ToCamelCase(symbol.Name ?? ("group" + (++gi)));
+            if (string.Equals(baseName, "app", StringComparison.Ordinal) || SyntaxFacts.GetKeywordKind(baseName) != SyntaxKind.None)
+            {
+                baseName += "Group";
+            }
+
             var varName = baseName;
             var suffix = 1;
-            while (groupVarByType.Values.Contains(varName))
+            while (reservedVariableNames.Contains(varName))
             {
                 varName = baseName + (++suffix).ToString();
             }
 
             groupVarByType[symbol] = varName;
+            reservedVariableNames.Add(varName);
 
 
             // Invoke the group's static Map method with the parent builder and capture the returned builder
@@ -246,6 +369,11 @@ public class EndpointMapperGenerator : IIncrementalGenerator
             {
                 foreach (var childSym in childList)
                 {
+                    if (excludedGroups.Contains(childSym))
+                    {
+                        continue;
+                    }
+
                     if (!parentVarBySymbol.ContainsKey(childSym))
                     {
                         parentVarBySymbol[childSym] = varName;
@@ -259,17 +387,34 @@ public class EndpointMapperGenerator : IIncrementalGenerator
         return groupVarByType;
     }
 
-    private static void EmitEndpoints(StringBuilder sb, List<EndpointInfo> endpoints, List<GroupInfo> groups, Dictionary<ISymbol, string> groupVarByType)
+    private static void EmitEndpoints(SourceProductionContext spc, StringBuilder sb, List<EndpointInfo> endpoints, List<GroupInfo> groups, Dictionary<ISymbol, string> groupVarByType, HashSet<ISymbol> excludedGroups)
     {
+        var groupedEndpointSkippedDesc = new DiagnosticDescriptor(
+            "MAAR004",
+            "Endpoint group mapping skipped",
+            "Endpoint '{0}' references group '{1}', but that group could not be mapped. Endpoint mapping was skipped.",
+            "Generator",
+            DiagnosticSeverity.Warning,
+            true);
+
         foreach (var ep in endpoints)
         {
             var target = "app";
             if (ep.GroupType != null)
             {
                 var groupSym = groups.Select(x => x.Symbol).FirstOrDefault(s => SymbolEqualityComparer.Default.Equals(s, ep.GroupType));
-                if (groupSym != null && groupVarByType.TryGetValue(groupSym, out var gv))
+                if (groupSym != null && !excludedGroups.Contains(groupSym) && groupVarByType.TryGetValue(groupSym, out var gv))
                 {
                     target = gv;
+                }
+                else
+                {
+                    spc.ReportDiagnostic(Diagnostic.Create(
+                        groupedEndpointSkippedDesc,
+                        ep.Symbol.Locations.FirstOrDefault(),
+                        ep.Symbol.ToDisplayString(),
+                        ep.GroupType.ToDisplayString()));
+                    continue;
                 }
             }
 
@@ -306,5 +451,20 @@ public class EndpointMapperGenerator : IIncrementalGenerator
         public INamedTypeSymbol Symbol { get; } = symbol;
         public IMethodSymbol MapMethod { get; } = mapMethod;
         public INamedTypeSymbol? GroupType { get; } = groupType;
+    }
+
+    private sealed class INamedTypeSymbolComparer : IEqualityComparer<INamedTypeSymbol>
+    {
+        public static INamedTypeSymbolComparer Instance { get; } = new();
+
+        public bool Equals(INamedTypeSymbol? x, INamedTypeSymbol? y)
+        {
+            return SymbolEqualityComparer.Default.Equals(x, y);
+        }
+
+        public int GetHashCode(INamedTypeSymbol obj)
+        {
+            return SymbolEqualityComparer.Default.GetHashCode(obj);
+        }
     }
 }

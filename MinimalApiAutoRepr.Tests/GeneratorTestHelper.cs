@@ -6,11 +6,12 @@ using Microsoft.CodeAnalysis.CSharp;
 
 internal static class GeneratorTestHelper
 {
-    // IEndpoint.g.cs (emitted by EndpointInterfaceGenerator) has no `using` for
-    // Microsoft.AspNetCore.Builder. Types in the global namespace are accessible
-    // from any namespace without a using, so we stub IEndpointRouteBuilder globally
-    // to keep test compilations entirely self-contained.
-    private const string GlobalStubs = "public interface IEndpointRouteBuilder { }";
+    // IEndpoint.g.cs uses unqualified IEndpointRouteBuilder. Keep a global stub so
+    // generated interfaces compile, and make it implement the ASP.NET Core routing
+    // contract so mapper signature validation can recognize compatibility.
+    private const string GlobalStubs =
+        "namespace Microsoft.AspNetCore.Routing { public interface IEndpointRouteBuilder { } } " +
+        "public interface IEndpointRouteBuilder : Microsoft.AspNetCore.Routing.IEndpointRouteBuilder { }";
 
     /// <summary>Compiles <paramref name="source"/> and runs all <paramref name="generators"/> against it.</summary>
     internal static GeneratorDriverRunResult RunGenerators(string source, params IIncrementalGenerator[] generators)
