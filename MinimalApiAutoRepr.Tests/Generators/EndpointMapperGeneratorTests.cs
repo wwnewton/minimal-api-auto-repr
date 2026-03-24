@@ -11,6 +11,9 @@ public class EndpointMapperGeneratorTests
     private static GeneratorDriverRunResult Run(string source) =>
         GeneratorTestHelper.RunGenerators(source, new EndpointInterfaceGenerator(), new EndpointMapperGenerator());
 
+    private static GeneratorDriverRunResult RunMapperOnly(string source) =>
+        GeneratorTestHelper.RunGenerators(source, new EndpointMapperGenerator());
+
     private static string MappingsText(GeneratorDriverRunResult result) =>
         result.Results
             .SelectMany(r => r.GeneratedSources)
@@ -225,5 +228,157 @@ public class EndpointMapperGeneratorTests
         var text = MappingsText(Run(source));
 
         Assert.Contains("myGroup2", text);
+    }
+
+    [Fact]
+    public void WhenInterfacesAreNotGenerated_ThenMapperStillEmitsOutput()
+    {
+        var text = MappingsText(RunMapperOnly("public class AnyType { }"));
+
+        Assert.Contains("MapAutoReprEndpoints", text);
+    }
+
+    [Fact]
+    public void WhenGroupMapReturnsVoid_ThenEmitsMAAR002Diagnostic()
+    {
+        var source = """
+            using MinimalApiAutoRepr.Generated;
+            public class BadGroup : IGroupEndpoint
+            {
+                public static void Map(IEndpointRouteBuilder app) { }
+            }
+            """;
+
+        var result = Run(source);
+
+        Assert.Contains(result.Diagnostics, d => d.Id == "MAAR002");
+    }
+
+    [Fact]
+    public void WhenEndpointMissingMap_ThenEmitsMAAR002Diagnostic()
+    {
+        var source = """
+            using MinimalApiAutoRepr.Generated;
+            public class BadEndpoint : IEndpoint
+            {
+            }
+            """;
+
+        var result = Run(source);
+
+        Assert.Contains(result.Diagnostics, d => d.Id == "MAAR002");
+    }
+
+    [Fact]
+    public void WhenGroupParentIsMissing_ThenEmitsMAAR003Diagnostic()
+    {
+        var source = """
+            using MinimalApiAutoRepr.Generated;
+            public class ChildGroup : IGroupEndpoint<MissingParentGroup>
+            {
+                public static IEndpointRouteBuilder Map(IEndpointRouteBuilder app) => app;
+            }
+            public class MissingParentGroup
+            {
+            }
+            """;
+
+        var result = Run(source);
+
+        Assert.Contains(result.Diagnostics, d => d.Id == "MAAR003");
+    }
+
+    [Fact]
+    public void WhenEndpointReferencesExcludedGroup_ThenEmitsMAAR004Diagnostic()
+    {
+        var source = """
+            using MinimalApiAutoRepr.Generated;
+            public class ChildGroup : IGroupEndpoint<MissingParentGroup>
+            {
+                public static IEndpointRouteBuilder Map(IEndpointRouteBuilder app) => app;
+            }
+            public class MissingParentGroup
+            {
+            }
+            public class ChildEndpoint : IEndpoint<ChildGroup>
+            {
+                public static void Map(IEndpointRouteBuilder app) { }
+            }
+            """;
+
+        var result = Run(source);
+
+        Assert.Contains(result.Diagnostics, d => d.Id == "MAAR004");
+    }
+
+    [Fact]
+    public void WhenMapUsesFullyQualifiedRouteBuilder_ThenGroupAndEndpointAreMapped()
+    {
+        var source = """
+            using MinimalApiAutoRepr.Generated;
+            public class QualifiedGroup : IGroupEndpoint
+            {
+                public static Microsoft.AspNetCore.Routing.IEndpointRouteBuilder Map(Microsoft.AspNetCore.Routing.IEndpointRouteBuilder app) => app;
+            }
+            public class QualifiedEndpoint : IEndpoint<QualifiedGroup>
+            {
+                public static void Map(Microsoft.AspNetCore.Routing.IEndpointRouteBuilder app) { }
+            }
+            """;
+
+        var text = MappingsText(Run(source));
+
+        Assert.Contains("global::QualifiedEndpoint.Map(qualifiedGroup);", text);
+    }
+
+    [Fact]
+    public void WhenGroupNameIsApp_ThenGeneratedVariableAvoidsCollision()
+    {
+        var source = """
+            using MinimalApiAutoRepr.Generated;
+            public class App : IGroupEndpoint
+            {
+                public static IEndpointRouteBuilder Map(IEndpointRouteBuilder app) => app;
+            }
+            """;
+
+        var text = MappingsText(Run(source));
+
+        Assert.Contains("var appGroup = global::App.Map(app);", text);
+    }
+
+    [Fact]
+    public void WhenGroupNameIsKeyword_ThenGeneratedVariableAvoidsKeywordName()
+    {
+        var source = """
+            using MinimalApiAutoRepr.Generated;
+            public class @class : IGroupEndpoint
+            {
+                public static IEndpointRouteBuilder Map(IEndpointRouteBuilder app) => app;
+            }
+            """;
+
+        var text = MappingsText(Run(source));
+
+        Assert.Contains("var classGroup = global::@class.Map(app);", text);
+    }
+
+    [Fact]
+    public void WhenGroupIsDeclaredPartialMultipleTimes_ThenItIsEmittedOnce()
+    {
+        var source = """
+            using MinimalApiAutoRepr.Generated;
+            public partial class DupGroup : IGroupEndpoint
+            {
+                public static IEndpointRouteBuilder Map(IEndpointRouteBuilder app) => app;
+            }
+            public partial class DupGroup
+            {
+            }
+            """;
+
+        var text = MappingsText(Run(source));
+
+        Assert.Equal(1, text.Split("global::DupGroup.Map(app);", StringSplitOptions.None).Length - 1);
     }
 }
