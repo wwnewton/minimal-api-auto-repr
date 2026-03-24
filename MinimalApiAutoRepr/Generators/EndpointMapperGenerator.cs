@@ -97,7 +97,29 @@ public class EndpointMapperGenerator : IIncrementalGenerator
         var endpointRouteBuilderSymbol = compilation.GetTypeByMetadataName("Microsoft.AspNetCore.Builder.IEndpointRouteBuilder")
             ?? compilation.GetTypeByMetadataName("Microsoft.AspNetCore.Routing.IEndpointRouteBuilder");
 
-        ParseTypes(spc, types, groups, endpoints, endpointRouteBuilderSymbol);
+        var groupEndpointInterfaceSymbol = compilation.GetTypeByMetadataName("MinimalApiAutoRepr.Generated.IGroupEndpoint");
+        var genericGroupEndpointInterfaceSymbol = compilation.GetTypeByMetadataName("MinimalApiAutoRepr.Generated.IGroupEndpoint`1");
+        var endpointInterfaceSymbol = compilation.GetTypeByMetadataName("MinimalApiAutoRepr.Generated.IEndpoint");
+        var genericEndpointInterfaceSymbol = compilation.GetTypeByMetadataName("MinimalApiAutoRepr.Generated.IEndpoint`1");
+
+        ParseTypes(
+            spc,
+            types,
+            groups,
+            endpoints,
+            endpointRouteBuilderSymbol,
+            groupEndpointInterfaceSymbol,
+            genericGroupEndpointInterfaceSymbol,
+            endpointInterfaceSymbol,
+            genericEndpointInterfaceSymbol);
+
+        groups = groups
+            .OrderBy(static g => g.Symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat), StringComparer.Ordinal)
+            .ToList();
+
+        endpoints = endpoints
+            .OrderBy(static e => e.Symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat), StringComparer.Ordinal)
+            .ToList();
 
         var sb = new StringBuilder();
 
@@ -133,7 +155,7 @@ public class EndpointMapperGenerator : IIncrementalGenerator
 
         var groupVarByType = EmitGroups(sb, groups, children, groupBySymbol, excludedGroups);
 
-        EmitEndpoints(spc, sb, endpoints, groups, groupVarByType, excludedGroups);
+        EmitEndpoints(spc, sb, endpoints, groupVarByType, excludedGroups);
 
         sb.AppendLine("        return app;");
         sb.AppendLine("    }");
@@ -169,7 +191,16 @@ public class EndpointMapperGenerator : IIncrementalGenerator
         return result;
     }
 
-    private static void ParseTypes(SourceProductionContext spc, IEnumerable<INamedTypeSymbol> types, List<GroupInfo> groups, List<EndpointInfo> endpoints, INamedTypeSymbol? endpointRouteBuilderSymbol)
+    private static void ParseTypes(
+        SourceProductionContext spc,
+        IEnumerable<INamedTypeSymbol> types,
+        List<GroupInfo> groups,
+        List<EndpointInfo> endpoints,
+        INamedTypeSymbol? endpointRouteBuilderSymbol,
+        INamedTypeSymbol? groupEndpointInterfaceSymbol,
+        INamedTypeSymbol? genericGroupEndpointInterfaceSymbol,
+        INamedTypeSymbol? endpointInterfaceSymbol,
+        INamedTypeSymbol? genericEndpointInterfaceSymbol)
     {
         // Discover groups and endpoints by implemented interfaces from the generated IEndpoint/IGroupEndpoint types.
         foreach (var symbol in types)
@@ -180,11 +211,13 @@ public class EndpointMapperGenerator : IIncrementalGenerator
             }
 
             // Detect group implementations (IGroupEndpoint or IGroupEndpoint<TParent>)
-            var groupInterface = symbol.AllInterfaces.FirstOrDefault(i => i.Name == "IGroupEndpoint" && i.ContainingNamespace.ToDisplayString() == "MinimalApiAutoRepr.Generated");
-            if (groupInterface != null)
+            if (ImplementsInterface(symbol, groupEndpointInterfaceSymbol))
             {
                 INamedTypeSymbol? parent = null;
-                var genericGroup = symbol.AllInterfaces.FirstOrDefault(i => i.MetadataName.StartsWith("IGroupEndpoint`"));
+                var genericGroup = symbol.AllInterfaces.FirstOrDefault(i =>
+                    genericGroupEndpointInterfaceSymbol != null
+                    && SymbolEqualityComparer.Default.Equals(i.OriginalDefinition, genericGroupEndpointInterfaceSymbol));
+
                 if (genericGroup is INamedTypeSymbol gis && gis.TypeArguments.Length == 1 && gis.TypeArguments[0] is INamedTypeSymbol arg)
                 {
                     parent = arg;
@@ -201,11 +234,13 @@ public class EndpointMapperGenerator : IIncrementalGenerator
             }
 
             // Detect endpoints (IEndpoint or IEndpoint<TGroup>)
-            var endpointInterface = symbol.AllInterfaces.FirstOrDefault(i => i.Name == "IEndpoint" && i.ContainingNamespace.ToDisplayString() == "MinimalApiAutoRepr.Generated");
-            if (endpointInterface != null)
+            if (ImplementsInterface(symbol, endpointInterfaceSymbol))
             {
                 INamedTypeSymbol? groupType = null;
-                var genericEndpoint = symbol.AllInterfaces.FirstOrDefault(i => i.MetadataName.StartsWith("IEndpoint`"));
+                var genericEndpoint = symbol.AllInterfaces.FirstOrDefault(i =>
+                    genericEndpointInterfaceSymbol != null
+                    && SymbolEqualityComparer.Default.Equals(i.OriginalDefinition, genericEndpointInterfaceSymbol));
+
                 if (genericEndpoint is INamedTypeSymbol eis && eis.TypeArguments.Length == 1 && eis.TypeArguments[0] is INamedTypeSymbol eag)
                 {
                     groupType = eag;
@@ -222,6 +257,18 @@ public class EndpointMapperGenerator : IIncrementalGenerator
                 }
             }
         }
+    }
+
+    private static bool ImplementsInterface(INamedTypeSymbol symbol, INamedTypeSymbol? interfaceSymbol)
+    {
+        if (interfaceSymbol == null)
+        {
+            return false;
+        }
+
+        return symbol.AllInterfaces.Any(i =>
+            SymbolEqualityComparer.Default.Equals(i, interfaceSymbol)
+            || SymbolEqualityComparer.Default.Equals(i.OriginalDefinition, interfaceSymbol));
     }
 
     private static bool TryGetValidMapMethod(INamedTypeSymbol symbol, INamedTypeSymbol? endpointRouteBuilderSymbol, bool requireNonVoidReturn, out IMethodSymbol? mapMethod)
@@ -293,6 +340,14 @@ public class EndpointMapperGenerator : IIncrementalGenerator
                 list.Add(g.Symbol);
             }
         }
+
+        foreach (var childList in children.Values)
+        {
+            childList.Sort(static (x, y) => StringComparer.Ordinal.Compare(
+                x.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                y.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)));
+        }
+
         return children;
     }
 
@@ -309,7 +364,8 @@ public class EndpointMapperGenerator : IIncrementalGenerator
         var parentVarBySymbol = new Dictionary<ISymbol, string>(SymbolEqualityComparer.Default);
         var q = new Queue<ISymbol>();
 
-        foreach (var g in groups.Where(g => g.Parent == null))
+        foreach (var g in groups.Where(g => g.Parent == null)
+            .OrderBy(static x => x.Symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat), StringComparer.Ordinal))
         {
             if (excludedGroups.Contains(g.Symbol))
             {
@@ -387,7 +443,7 @@ public class EndpointMapperGenerator : IIncrementalGenerator
         return groupVarByType;
     }
 
-    private static void EmitEndpoints(SourceProductionContext spc, StringBuilder sb, List<EndpointInfo> endpoints, List<GroupInfo> groups, Dictionary<ISymbol, string> groupVarByType, HashSet<ISymbol> excludedGroups)
+    private static void EmitEndpoints(SourceProductionContext spc, StringBuilder sb, List<EndpointInfo> endpoints, Dictionary<ISymbol, string> groupVarByType, HashSet<ISymbol> excludedGroups)
     {
         var groupedEndpointSkippedDesc = new DiagnosticDescriptor(
             "MAAR004",
@@ -402,8 +458,7 @@ public class EndpointMapperGenerator : IIncrementalGenerator
             var target = "app";
             if (ep.GroupType != null)
             {
-                var groupSym = groups.Select(x => x.Symbol).FirstOrDefault(s => SymbolEqualityComparer.Default.Equals(s, ep.GroupType));
-                if (groupSym != null && !excludedGroups.Contains(groupSym) && groupVarByType.TryGetValue(groupSym, out var gv))
+                if (!excludedGroups.Contains(ep.GroupType) && groupVarByType.TryGetValue(ep.GroupType, out var gv))
                 {
                     target = gv;
                 }
