@@ -34,7 +34,7 @@ public class EndpointMapperGenerator : IIncrementalGenerator
     {
         var indegree = new Dictionary<ISymbol, int>(SymbolEqualityComparer.Default);
         foreach (var g in groups)
-       {
+        {
             indegree[g.Symbol] = 0;
         }
 
@@ -58,10 +58,10 @@ public class EndpointMapperGenerator : IIncrementalGenerator
                 {
                     indegree[c]--;
                     if (indegree[c] == 0)
-                   {
+                    {
                         q.Enqueue(c);
                     }
-            }
+                }
             }
         }
 
@@ -147,12 +147,6 @@ public class EndpointMapperGenerator : IIncrementalGenerator
         excludedGroups.UnionWith(cycleNodes);
         excludedGroups.UnionWith(groupsWithMissingParent);
 
-        // Resolve builder symbols (kept for potential future checks)
-        _ = endpointRouteBuilderSymbol;
-
-        _ = compilation.GetTypeByMetadataName("Microsoft.AspNetCore.Builder.RouteGroupBuilder")
-            ?? compilation.GetTypeByMetadataName("Microsoft.AspNetCore.Routing.RouteGroupBuilder");
-
         var groupVarByType = EmitGroups(sb, groups, children, groupBySymbol, excludedGroups);
 
         EmitEndpoints(spc, sb, endpoints, groupVarByType, excludedGroups);
@@ -206,7 +200,7 @@ public class EndpointMapperGenerator : IIncrementalGenerator
         foreach (var symbol in types)
         {
             if (symbol.TypeKind == TypeKind.Interface)
-           {
+            {
                 continue;
             }
 
@@ -249,7 +243,7 @@ public class EndpointMapperGenerator : IIncrementalGenerator
                 // Find static Map method; if not present skip the endpoint
                 if (TryGetValidMapMethod(symbol, endpointRouteBuilderSymbol, requireNonVoidReturn: false, out var mapMethod))
                 {
-                    endpoints.Add(new EndpointInfo(symbol, mapMethod!, groupType));
+                    endpoints.Add(new EndpointInfo(symbol, groupType));
                 }
                 else
                 {
@@ -412,7 +406,6 @@ public class EndpointMapperGenerator : IIncrementalGenerator
             groupVarByType[symbol] = varName;
             reservedVariableNames.Add(varName);
 
-
             // Invoke the group's static Map method with the parent builder and capture the returned builder
             var containingGroup = ginfo.Symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
             sb.AppendLine($"        var {varName} = {containingGroup}.Map({parentVar});");
@@ -501,10 +494,9 @@ public class EndpointMapperGenerator : IIncrementalGenerator
         public INamedTypeSymbol? Parent { get; } = parent;
     }
 
-    private class EndpointInfo(INamedTypeSymbol symbol, IMethodSymbol mapMethod, INamedTypeSymbol? groupType)
+    private class EndpointInfo(INamedTypeSymbol symbol, INamedTypeSymbol? groupType)
     {
         public INamedTypeSymbol Symbol { get; } = symbol;
-        public IMethodSymbol MapMethod { get; } = mapMethod;
         public INamedTypeSymbol? GroupType { get; } = groupType;
     }
 
